@@ -1,0 +1,20 @@
+*.py[cod]
+*$py.class
+.coverage
+.python-version
+.venv
+# SSH keyfile
+.keyfile
+
+#GCP service account
+gcp_credentials.json
+
+
+.idea/*
+*.DS_Store
+venv-local/*
+_src/__pycache__/
+.pytest_cache/
+/.mypy_cache/
+/venv
+/node_modules/
