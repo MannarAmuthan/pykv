@@ -1,4 +1,6 @@
+import json
 import os
+from sys import getsizeof
 from typing import Dict, Optional
 
 from pykv.file_store import FileStore
@@ -9,6 +11,14 @@ class KeyNotFoundException(Exception):
 
 
 class KeyAlreadyExistsException(Exception):
+    pass
+
+
+class InvalidKeyException(Exception):
+    pass
+
+
+class InvalidValueException(Exception):
     pass
 
 
@@ -23,14 +33,21 @@ class KeyValueStore:
 
     def read(self, key_string: str):
         if not self.file_store.is_exists(key_string):
-            return KeyNotFoundException(f"Given key {key_string} not found in Store")
+            raise KeyNotFoundException(f"Given key {key_string} not found in Store")
         return self.file_store.get(key_string)
 
-    def write(self, key_string: str, key_value: Dict):
-        if self.file_store.is_exists(key_string):
-            return KeyAlreadyExistsException(f"Given key {key_string} is already exists in Store")
+    def write(self, key_string: str, value: Dict):
 
-        self.file_store.create(key_string, key_value)
+        if len(key_string) > 32:
+            raise InvalidKeyException(f"Key string length exceeds limit of 32 characters")
+
+        if getsizeof(json.dumps(value)) > 16000:
+            raise InvalidKeyException(f"Value size exceeds limit of 16KB")
+
+        if self.file_store.is_exists(key_string):
+            raise InvalidValueException(f"Given key {key_string} is already exists in Store")
+
+        self.file_store.create(key_string, value)
 
     def get_all(self):
         return self.file_store.get_all_keys_and_values()
