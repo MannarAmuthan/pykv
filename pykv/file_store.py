@@ -50,10 +50,13 @@ class FileStore:
         return False
 
     def get(self, key_string: str):
-        if self.is_exists(key_string):
+        record_offset = self.starting_offset + (self.keys_and_offsets[key_string] * self.block_size_in_bytes)
+        if self.is_exists(key_string) and self.record_manager.is_available(
+                file_pointer=self.file_pointer,
+                record_offset=record_offset):
             _, _, _, _, _, value_as_bytes = self.record_manager.read(
-                self.file_pointer,
-                self.starting_offset + (self.keys_and_offsets[key_string] * self.block_size_in_bytes))
+                file_pointer=self.file_pointer,
+                record_offset=record_offset)
 
             return json.loads(value_as_bytes)
 
@@ -82,20 +85,31 @@ class FileStore:
             self.keys_and_offsets[key_string] = self.current_slot
             self.current_slot += number_of_slots_needed
 
+    def delete(self, key_string: str):
+        if self.is_exists(key_string):
+            self.record_manager.delete(
+                self.file_pointer,
+                self.starting_offset + (self.keys_and_offsets[key_string] * self.block_size_in_bytes))
+
+            self.keys_and_offsets.pop(key_string)
+
     def get_all_keys_and_values(self) -> Dict[str, dict]:
 
         all_keys_and_values = {}
 
         block = 0
-        while True:
-            if block >= self.current_slot:
-                break
-            _, slots_count, _, _, key_as_bytes, value_as_bytes = self.record_manager.read(
-                self.file_pointer,
-                self.starting_offset + (block * self.block_size_in_bytes))
+        while block < self.current_slot:
+            record_offset = self.starting_offset + (block * self.block_size_in_bytes)
+            if self.record_manager.is_available(file_pointer=self.file_pointer,
+                                                record_offset=record_offset):
+                _, slots_count, _, _, key_as_bytes, value_as_bytes = self.record_manager.read(
+                    self.file_pointer, record_offset
+                )
 
-            all_keys_and_values[key_as_bytes.decode("utf-8")] = json.loads(value_as_bytes.decode('utf=8'))
+                all_keys_and_values[key_as_bytes.decode("utf-8")] = json.loads(value_as_bytes.decode('utf=8'))
 
-            block += slots_count
+                block += slots_count
+            else:
+                block += 1
 
         return all_keys_and_values

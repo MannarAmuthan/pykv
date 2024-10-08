@@ -36,6 +36,11 @@ class KeyValueStore:
             raise KeyNotFoundException(f"Given key {key_string} not found in Store")
         return self.file_store.get(key_string)
 
+    def delete(self, key_string: str):
+        if not self.file_store.is_exists(key_string):
+            raise KeyNotFoundException(f"Given key {key_string} not found in Store")
+        return self.file_store.delete(key_string)
+
     def write(self, key_string: str, value: Dict):
 
         if len(key_string) > 32:

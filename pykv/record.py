@@ -1,7 +1,8 @@
 import math
 import os
 import threading
-from typing import Tuple, Any
+from mmap import mmap
+from typing import Tuple, Any, Optional
 
 TYPE_FLAG = int  # 1 byte , 0 - Not Available , 1 - Available Primary, 2 - Available Sub slot
 SLOTS_COUNT = int  # 1 byte , length of slots for this record, applicable only for primary slot
@@ -20,18 +21,10 @@ def extend_file(bytes_to_append: int, file_path: str):
         f.close()
 
 
-class RecordWriter:
-    pass
-
-
-file_lock = threading.Lock()
-
-
 def thread_safe(func):
     def wrapper(*args, **kwargs):
-        with file_lock:
-            result = func(*args, **kwargs)
-            return result
+        result = func(*args, **kwargs)
+        return result
 
     return wrapper
 
@@ -40,6 +33,7 @@ class RecordManager:
 
     def __init__(self):
         self.slot_size_in_bytes = 512
+        file_lock = threading.Lock()
 
     @thread_safe
     def write(self,
@@ -56,7 +50,7 @@ class RecordManager:
         slots_count = self.get_slots_needed(key_len, value_len)
 
         file_pointer.seek(offset)
-        file_pointer.write(b'1')
+        file_pointer.write((1).to_bytes(1))
 
         offset += 1
 
@@ -101,17 +95,12 @@ class RecordManager:
             offset += 1
 
             file_pointer.seek(offset)
-            file_pointer.write(b'2')
+            file_pointer.write((2).to_bytes(1))
 
             available_bytes_in_current_record = usable_bytes_in_a_record
 
             offset += 4
 
-        return slots_count
-
-    def get_slots_needed(self, key_len, value_len):
-        usable_bytes_in_a_record = self.slot_size_in_bytes - 5
-        slots_count = math.ceil((key_len + value_len) * 1.0 / usable_bytes_in_a_record)
         return slots_count
 
     @thread_safe
@@ -176,3 +165,39 @@ class RecordManager:
                 val_len,
                 key_as_bytes,
                 bytes(value_as_byte_list))
+
+    @thread_safe
+    def is_available(self,
+                     file_pointer,
+                     record_offset: int):
+
+        file_pointer.seek(record_offset)
+        type_flag = int.from_bytes(file_pointer.read(1))
+
+        if type_flag == 1:
+            return True
+        return False
+
+    @thread_safe
+    def delete(self,
+               file_pointer: mmap,
+               record_offset: int):
+
+        slot_count_pointer = record_offset + 1
+
+        file_pointer.seek(slot_count_pointer)
+        slots_count = int.from_bytes(file_pointer.read(1))
+
+        index = 0
+        offset = record_offset
+        while index < slots_count:
+            file_pointer.seek(offset)
+            file_pointer.write((0).to_bytes(1))
+            offset += self.slot_size_in_bytes
+            index += 1
+
+    @thread_safe
+    def get_slots_needed(self, key_len, value_len):
+        usable_bytes_in_a_record = self.slot_size_in_bytes - 5
+        slots_count = math.ceil((key_len + value_len) * 1.0 / usable_bytes_in_a_record)
+        return slots_count
