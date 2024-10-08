@@ -1,6 +1,7 @@
+import os
 from typing import Dict, Optional
 
-from pykv.handlers.file_handler import FileHandler, FileHandlerImpl
+from pykv.file_store import FileStore
 
 
 class KeyNotFoundException(Exception):
@@ -14,27 +15,22 @@ class KeyAlreadyExistsException(Exception):
 class KeyValueStore:
 
     def __init__(self,
-                 file_path: Optional[str],
-                 file_handler: FileHandler = FileHandlerImpl()):
+                 file_path: Optional[str] = "default_kv.bin"
+                 ):
 
         self.__file_path__ = file_path
-        self.file_handler = file_handler
-
-        self.__store__ = {}
-
-        file_handler.create_file_if_not_exists(file_path=file_path)
+        self.file_store: FileStore = FileStore(os.getcwd() + "/" + file_path)
 
     def read(self, key_string: str):
-        if key_string not in self.__store__:
+        if not self.file_store.is_exists(key_string):
             return KeyNotFoundException(f"Given key {key_string} not found in Store")
-        return self.__store__[key_string]
+        return self.file_store.get(key_string)
 
     def write(self, key_string: str, key_value: Dict):
-        if key_string in self.__store__:
+        if self.file_store.is_exists(key_string):
             return KeyAlreadyExistsException(f"Given key {key_string} is already exists in Store")
-        self.__store__[key_string] = key_value
 
-    def delete(self, key_string: str):
-        if key_string not in self.__store__:
-            return KeyNotFoundException(f"Given key {key_string} not found in Store")
-        self.__store__.pop(key_string)
+        self.file_store.create(key_string, key_value)
+
+    def get_all(self):
+        return self.file_store.get_all_keys_and_values()
