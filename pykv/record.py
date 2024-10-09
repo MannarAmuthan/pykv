@@ -13,6 +13,8 @@ VALUE_BYTES = bytes
 
 Record = Tuple[TYPE_FLAG, SLOTS_COUNT, KEY_LEN, VAL_LEN, KEY_BYTES, VALUE_BYTES]
 
+file_lock = threading.Lock()
+
 
 def extend_file(bytes_to_append: int, file_path: str):
     if os.path.exists(file_path):
@@ -23,8 +25,9 @@ def extend_file(bytes_to_append: int, file_path: str):
 
 def thread_safe(func):
     def wrapper(*args, **kwargs):
-        result = func(*args, **kwargs)
-        return result
+        with file_lock:
+            result = func(*args, **kwargs)
+            return result
 
     return wrapper
 
@@ -33,7 +36,27 @@ class RecordManager:
 
     def __init__(self):
         self.slot_size_in_bytes = 512
-        file_lock = threading.Lock()
+        self.magic_number = 99
+
+    def write_magic_bytes(self, file_pointer):
+        file_pointer.seek(0)
+        file_pointer.write(self.magic_number.to_bytes(1))
+
+    def is_magic_bytes_exists(self, file_pointer):
+        file_pointer.seek(0)
+        value = int.from_bytes(file_pointer.read(1))
+        return self.magic_number == value
+
+    @staticmethod
+    def set_record_count(file_pointer, value):
+        file_pointer.seek(1)
+        file_pointer.write(value.to_bytes(4, 'big'))
+
+    @staticmethod
+    def get_record_count(file_pointer):
+        file_pointer.seek(1)
+        record_count = int.from_bytes(file_pointer.read(4), 'big')
+        return record_count
 
     @thread_safe
     def write(self,
@@ -196,7 +219,6 @@ class RecordManager:
             offset += self.slot_size_in_bytes
             index += 1
 
-    @thread_safe
     def get_slots_needed(self, key_len, value_len):
         usable_bytes_in_a_record = self.slot_size_in_bytes - 5
         slots_count = math.ceil((key_len + value_len) * 1.0 / usable_bytes_in_a_record)
