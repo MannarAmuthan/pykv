@@ -1,6 +1,7 @@
 import json
 import mmap
 import os
+from datetime import datetime, timezone, timedelta
 from typing import Dict
 
 from pykv.record import RecordManager
@@ -26,7 +27,25 @@ def get_memory_mapped_file_pointer(file_path):
         return mmap.mmap(f.fileno(), 0, access=mmap.ACCESS_WRITE)
 
 
+def is_passed(timestamp: int):
+    given_time = datetime.fromtimestamp(timestamp, tz=timezone.utc)
+    current_time = datetime.now(timezone.utc)
+    return current_time > given_time
+
+
+def add_seconds(input_time: datetime):
+    return input_time + timedelta(0, 3)
+
+
+def get_timestamp(input_time: datetime):
+    return int(input_time.timestamp())
+
+
 class FileStoreException(Exception):
+    pass
+
+
+class FileStoreGetException(Exception):
     pass
 
 
@@ -61,13 +80,17 @@ class FileStore:
         if self.is_exists(key_string) and self.record_manager.is_available(
                 file_pointer=self.file_pointer,
                 record_offset=record_offset):
-            _, _, _, _, _, value_as_bytes = self.record_manager.read(
+            _, _, ttl_in_seconds, _, _, _, value_as_bytes = self.record_manager.read(
                 file_pointer=self.file_pointer,
                 record_offset=record_offset)
 
+            if ttl_in_seconds > 0 and is_passed(ttl_in_seconds):
+                self.delete(key_string)
+                raise FileStoreGetException(f"Attempt to retrieve expired key {key_string}")
+
             return json.loads(value_as_bytes)
 
-    def create(self, key_string: str, key_value: Dict):
+    def create(self, key_string: str, key_value: Dict, time_to_live_in_seconds: int = 0):
         if not self.is_exists(key_string):
             key_as_bytes = str.encode(key_string)
             value_as_bytes = str.encode(json.dumps(key_value))
@@ -86,7 +109,8 @@ class FileStore:
                 file_pointer=self.file_pointer,
                 offset=self.starting_offset + (self.current_slot * self.block_size_in_bytes),
                 key_as_bytes=key_as_bytes,
-                value_as_bytes=value_as_bytes
+                value_as_bytes=value_as_bytes,
+                ttl_in_seconds=get_timestamp(add_seconds(datetime.now())) if time_to_live_in_seconds > 0 else 0
             )
 
             self.keys_and_offsets[key_string] = self.current_slot
@@ -118,7 +142,7 @@ class FileStore:
             record_offset = self.starting_offset + (slot * self.block_size_in_bytes)
             if self.record_manager.is_available(file_pointer=self.file_pointer,
                                                 record_offset=record_offset):
-                _, slots_count, _, _, key_as_bytes, value_as_bytes = self.record_manager.read(
+                _, slots_count, _, _, _, key_as_bytes, value_as_bytes = self.record_manager.read(
                     self.file_pointer, record_offset
                 )
 
@@ -140,7 +164,7 @@ class FileStore:
             record_offset = self.starting_offset + (slot * self.block_size_in_bytes)
             if self.record_manager.is_available(file_pointer=self.file_pointer,
                                                 record_offset=record_offset):
-                _, slots_count, _, _, key_as_bytes, value_as_bytes = self.record_manager.read(
+                _, slots_count, _, _, _, key_as_bytes, value_as_bytes = self.record_manager.read(
                     self.file_pointer, record_offset
                 )
 

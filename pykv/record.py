@@ -6,12 +6,13 @@ from typing import Tuple, Any, Optional
 
 TYPE_FLAG = int  # 1 byte , 0 - Not Available , 1 - Available Primary, 2 - Available Sub slot
 SLOTS_COUNT = int  # 1 byte , length of slots for this record, applicable only for primary slot
+TIME_TO_LIVE = int # 4 byte, UNIX Epoch timestamp
 KEY_LEN = int  # 1 byte , length of key byte string
 VAL_LEN = int  # 2 byte , length of value byte string
 KEY_BYTES = bytes
 VALUE_BYTES = bytes
 
-Record = Tuple[TYPE_FLAG, SLOTS_COUNT, KEY_LEN, VAL_LEN, KEY_BYTES, VALUE_BYTES]
+Record = Tuple[TYPE_FLAG, SLOTS_COUNT, TIME_TO_LIVE, KEY_LEN, VAL_LEN, KEY_BYTES, VALUE_BYTES]
 
 file_lock = threading.Lock()
 
@@ -37,6 +38,8 @@ class RecordManager:
     def __init__(self):
         self.slot_size_in_bytes = 512
         self.magic_number = 99
+        self.metadata_bytes_length_in_a_slot = 9
+        self.usable_bytes_in_a_slot = self.slot_size_in_bytes - self.metadata_bytes_length_in_a_slot
 
     def write_magic_bytes(self, file_pointer):
         file_pointer.seek(0)
@@ -63,7 +66,8 @@ class RecordManager:
               file_pointer,
               offset: int,
               key_as_bytes: bytes,
-              value_as_bytes: bytes) -> SLOTS_COUNT:
+              value_as_bytes: bytes,
+              ttl_in_seconds: int = 0) -> SLOTS_COUNT:
 
         key_len: int = len(key_as_bytes)
         value_len: int = len(value_as_bytes)
@@ -81,6 +85,11 @@ class RecordManager:
         file_pointer.write(slots_count.to_bytes(1))
 
         offset += 1
+
+        file_pointer.seek(offset)
+        file_pointer.write(ttl_in_seconds.to_bytes(4))
+
+        offset += 4
 
         file_pointer.seek(offset)
         file_pointer.write(key_len.to_bytes(1))
@@ -122,7 +131,7 @@ class RecordManager:
 
             available_bytes_in_current_record = usable_bytes_in_a_record
 
-            offset += 4
+            offset += 8
 
         return slots_count
 
@@ -132,15 +141,19 @@ class RecordManager:
              record_offset: int) -> Record:
 
         slot_count_pointer = record_offset + 1
-        key_len_pointer = record_offset + 2
-        value_len_pointer = record_offset + 3
-        key_value_bytes_starts_at = 5
+        ttl_pointer = record_offset + 2
+        key_len_pointer = record_offset + 6
+        value_len_pointer = record_offset + 7
+        key_value_bytes_starts_at = 9
 
         file_pointer.seek(record_offset)
         type_flag = int.from_bytes(file_pointer.read(1))
 
         file_pointer.seek(slot_count_pointer)
         slots_count = int.from_bytes(file_pointer.read(1))
+
+        file_pointer.seek(ttl_pointer)
+        ttl_seconds = int.from_bytes(file_pointer.read(4), 'big')
 
         file_pointer.seek(key_len_pointer)
         key_len_in_bytes = file_pointer.read(1)
@@ -176,7 +189,7 @@ class RecordManager:
                 break
 
             offset += available_bytes_in_current_record
-            offset += 5
+            offset += self.metadata_bytes_length_in_a_slot
             available_bytes_in_current_record = usable_bytes_in_a_record
 
             bytes_to_read = min(remaining_to_read,
@@ -184,6 +197,7 @@ class RecordManager:
 
         return (type_flag,
                 slots_count,
+                ttl_seconds,
                 key_len,
                 val_len,
                 key_as_bytes,
@@ -220,6 +234,5 @@ class RecordManager:
             index += 1
 
     def get_slots_needed(self, key_len, value_len):
-        usable_bytes_in_a_record = self.slot_size_in_bytes - 5
-        slots_count = math.ceil((key_len + value_len) * 1.0 / usable_bytes_in_a_record)
+        slots_count = math.ceil((key_len + value_len) * 1.0 / self.usable_bytes_in_a_slot)
         return slots_count
