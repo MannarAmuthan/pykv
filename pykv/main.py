@@ -3,7 +3,8 @@ import os
 from sys import getsizeof
 from typing import Dict, Optional
 
-from pykv.file_store import FileStore, FileStoreGetException
+from pykv.file_store import FileStore, StoreException
+from pykv.mem_store import MemStore
 
 
 class KeyNotFoundException(Exception):
@@ -14,11 +15,11 @@ class KeyAlreadyExistsException(Exception):
     pass
 
 
-class InvalidKeyException(Exception):
+class ExpiredKeyException(Exception):
     pass
 
 
-class ExpiredKeyException(Exception):
+class InvalidKeyException(Exception):
     pass
 
 
@@ -29,24 +30,33 @@ class InvalidValueException(Exception):
 class KeyValueStore:
 
     def __init__(self,
-                 file_path: Optional[str] = "default_kv.bin"
-                 ):
+                 file_path: Optional[str] = "default_kv.bin",
+                 background_jobs_frequency_in_seconds=60,
+                 mem_store_mode=False):
 
         self.__file_path__ = file_path
-        self.file_store: FileStore = FileStore(os.getcwd() + "/" + file_path)
+        if not mem_store_mode:
+            self.store: FileStore = FileStore(
+                file_path=os.getcwd() + "/" + file_path,
+                background_jobs_frequency_in_seconds=background_jobs_frequency_in_seconds)
+        else:
+            self.store: MemStore = MemStore(
+                background_jobs_frequency_in_seconds=background_jobs_frequency_in_seconds)
+
+        self.store.start_background_jobs()
 
     def read(self, key_string: str):
-        if not self.file_store.is_exists(key_string):
+        if not self.store.is_exists(key_string):
             raise KeyNotFoundException(f"Given key {key_string} not found in Store")
         try:
-            return self.file_store.get(key_string)
-        except FileStoreGetException as exception:
+            return self.store.get(key_string)
+        except StoreException as exception:
             raise ExpiredKeyException(str(exception))
 
     def delete(self, key_string: str):
-        if not self.file_store.is_exists(key_string):
+        if not self.store.is_exists(key_string):
             raise KeyNotFoundException(f"Given key {key_string} not found in Store")
-        return self.file_store.delete(key_string)
+        return self.store.delete(key_string)
 
     def write(self, key_string: str, value: Dict, time_to_live_in_seconds=0):
 
@@ -56,10 +66,13 @@ class KeyValueStore:
         if getsizeof(json.dumps(value)) > 16000:
             raise InvalidKeyException(f"Value size exceeds limit of 16KB")
 
-        if self.file_store.is_exists(key_string):
+        if self.store.is_exists(key_string):
             raise InvalidValueException(f"Given key {key_string} is already exists in Store")
 
-        self.file_store.create(key_string, value, time_to_live_in_seconds)
+        self.store.create(key_string, value, time_to_live_in_seconds)
 
     def get_all(self):
-        return self.file_store.get_all_keys_and_values()
+        return self.store.get_all_keys_and_values()
+
+    def stop_background_jobs(self):
+        self.store.stop_background_jobs()

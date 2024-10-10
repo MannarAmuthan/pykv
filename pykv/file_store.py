@@ -1,56 +1,19 @@
 import json
-import mmap
-import os
-from datetime import datetime, timezone, timedelta
+from datetime import datetime
+from time import sleep
 from typing import Dict
 
+from pykv.data_structures.heap import Heap
 from pykv.record import RecordManager
+from pykv.store import StoreGetException, StoreException, Store
+from pykv.utils import create_file_if_not_exists, extend_file, get_memory_mapped_file_pointer, is_passed, add_seconds, \
+    get_timestamp
 
 
-def create_file_if_not_exists(file_path: str):
-    if not os.path.exists(file_path):
-        file = open(file_path, "w")
-        file.close()
-        return True
-    return False
-
-
-def extend_file(bytes_to_append: int, file_path: str):
-    if os.path.exists(file_path):
-        f = open(file_path, "ab")
-        f.write(bytes_to_append * b'\0')
-        f.close()
-
-
-def get_memory_mapped_file_pointer(file_path):
-    with open(file_path, "r+b") as f:
-        return mmap.mmap(f.fileno(), 0, access=mmap.ACCESS_WRITE)
-
-
-def is_passed(timestamp: int):
-    given_time = datetime.fromtimestamp(timestamp, tz=timezone.utc)
-    current_time = datetime.now(timezone.utc)
-    return current_time > given_time
-
-
-def add_seconds(input_time: datetime):
-    return input_time + timedelta(0, 3)
-
-
-def get_timestamp(input_time: datetime):
-    return int(input_time.timestamp())
-
-
-class FileStoreException(Exception):
-    pass
-
-
-class FileStoreGetException(Exception):
-    pass
-
-
-class FileStore:
-    def __init__(self, file_path: str):
+class FileStore(Store):
+    def __init__(self,
+                 file_path: str,
+                 background_jobs_frequency_in_seconds: int):
 
         self.keys_and_offsets: Dict[str, int] = {}
         self.current_slot = 0
@@ -60,6 +23,7 @@ class FileStore:
         self.block_size_in_bytes = 512
         self.file_path = file_path
         self.record_manager = RecordManager()
+        self.heap = Heap()
 
         if create_file_if_not_exists(file_path):
             extend_file(bytes_to_append=self.total_blocks * self.block_size_in_bytes,
@@ -69,6 +33,9 @@ class FileStore:
         else:
             self.file_pointer = get_memory_mapped_file_pointer(file_path)
             self.load()
+
+        super().__init__(self.expire_keys,
+                         background_jobs_frequency_in_seconds)
 
     def is_exists(self, key_string: str):
         if key_string in self.keys_and_offsets:
@@ -86,7 +53,7 @@ class FileStore:
 
             if ttl_in_seconds > 0 and is_passed(ttl_in_seconds):
                 self.delete(key_string)
-                raise FileStoreGetException(f"Attempt to retrieve expired key {key_string}")
+                raise StoreGetException(f"Attempt to retrieve expired key {key_string}")
 
             return json.loads(value_as_bytes)
 
@@ -105,13 +72,17 @@ class FileStore:
                             file_path=self.file_path)
                 self.file_pointer = get_memory_mapped_file_pointer(self.file_path)
 
+            time_to_live = get_timestamp(add_seconds(datetime.now())) if time_to_live_in_seconds > 0 else 0
             self.record_manager.write(
                 file_pointer=self.file_pointer,
                 offset=self.starting_offset + (self.current_slot * self.block_size_in_bytes),
                 key_as_bytes=key_as_bytes,
                 value_as_bytes=value_as_bytes,
-                ttl_in_seconds=get_timestamp(add_seconds(datetime.now())) if time_to_live_in_seconds > 0 else 0
+                ttl_in_seconds=time_to_live
             )
+
+            if time_to_live_in_seconds > 0:
+                self.heap.push((time_to_live, key_string))
 
             self.keys_and_offsets[key_string] = self.current_slot
             self.current_slot += number_of_slots_needed
@@ -131,7 +102,7 @@ class FileStore:
     def load(self):
 
         if not self.record_manager.is_magic_bytes_exists(self.file_pointer):
-            raise FileStoreException("Existing data file is not valid, failed to load")
+            raise StoreException("Existing data file is not valid, failed to load")
 
         slot = 0
         added_records = 0
@@ -176,3 +147,14 @@ class FileStore:
                 slot += 1
 
         return all_keys_and_values
+
+    def expire_keys(self):
+        while not self.stop_event.is_set():
+            while not self.heap.is_empty():
+                ttl_in_seconds, key_string = self.heap.peek()
+                if is_passed(ttl_in_seconds):
+                    self.delete(key_string)
+                    self.heap.pop()
+                else:
+                    break
+            sleep(self.background_jobs_frequency_in_seconds)
