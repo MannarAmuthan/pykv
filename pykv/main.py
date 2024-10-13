@@ -35,13 +35,16 @@ class KeyValueStore:
                  mem_store_mode=False):
 
         self.__file_path__ = file_path
-        if not mem_store_mode:
-            self.store: FileStore = FileStore(
-                file_path=os.getcwd() + "/" + file_path,
-                background_jobs_frequency_in_seconds=background_jobs_frequency_in_seconds)
+        self.file_store = FileStore(
+            file_path=os.getcwd() + "/" + file_path,
+            background_jobs_frequency_in_seconds=background_jobs_frequency_in_seconds)
+        self.mem_store: MemStore = MemStore(
+            background_jobs_frequency_in_seconds=background_jobs_frequency_in_seconds)
+
+        if mem_store_mode:
+            self.store = self.mem_store
         else:
-            self.store: MemStore = MemStore(
-                background_jobs_frequency_in_seconds=background_jobs_frequency_in_seconds)
+            self.store = self.file_store
 
         self.store.start_background_jobs()
 
