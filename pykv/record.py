@@ -1,3 +1,4 @@
+import functools
 import math
 import os
 import threading
@@ -6,15 +7,13 @@ from typing import Tuple, Any, Optional
 
 TYPE_FLAG = int  # 1 byte , 0 - Not Available , 1 - Available Primary, 2 - Available Sub slot
 SLOTS_COUNT = int  # 1 byte , length of slots for this record, applicable only for primary slot
-TIME_TO_LIVE = int # 4 byte, UNIX Epoch timestamp
+TIME_TO_LIVE = int  # 4 byte, UNIX Epoch timestamp
 KEY_LEN = int  # 1 byte , length of key byte string
 VAL_LEN = int  # 2 byte , length of value byte string
 KEY_BYTES = bytes
 VALUE_BYTES = bytes
 
 Record = Tuple[TYPE_FLAG, SLOTS_COUNT, TIME_TO_LIVE, KEY_LEN, VAL_LEN, KEY_BYTES, VALUE_BYTES]
-
-file_lock = threading.Lock()
 
 
 def extend_file(bytes_to_append: int, file_path: str):
@@ -25,11 +24,9 @@ def extend_file(bytes_to_append: int, file_path: str):
 
 
 def thread_safe(func):
-    def wrapper(*args, **kwargs):
-        with file_lock:
-            result = func(*args, **kwargs)
-            return result
-
+    def wrapper(self, *args, **kwargs):
+        with getattr(self, "file_lock"):
+            return func(self, *args, **kwargs)
     return wrapper
 
 
@@ -40,11 +37,14 @@ class RecordManager:
         self.magic_number = 99
         self.metadata_bytes_length_in_a_slot = 9
         self.usable_bytes_in_a_slot = self.slot_size_in_bytes - self.metadata_bytes_length_in_a_slot
+        self.file_lock = threading.Lock()
 
+    @thread_safe
     def write_magic_bytes(self, file_pointer):
         file_pointer.seek(0)
         file_pointer.write(self.magic_number.to_bytes(1))
 
+    @thread_safe
     def is_magic_bytes_exists(self, file_pointer):
         file_pointer.seek(0)
         value = int.from_bytes(file_pointer.read(1))

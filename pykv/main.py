@@ -46,7 +46,12 @@ class KeyValueStore:
         else:
             self.store = self.file_store
 
-        self.store.start_background_jobs()
+    def start(self):
+        self.start_background_jobs()
+
+    def close(self):
+        self.stop_background_jobs()
+        self.file_store.close()
 
     def read(self, key_string: str):
         if not self.store.is_exists(key_string):
@@ -79,3 +84,6 @@ class KeyValueStore:
 
     def stop_background_jobs(self):
         self.store.stop_background_jobs()
+
+    def start_background_jobs(self):
+        self.store.start_background_jobs()

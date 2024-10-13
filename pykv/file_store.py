@@ -1,4 +1,5 @@
 import json
+import os
 from datetime import datetime
 from time import sleep
 from typing import Dict
@@ -158,3 +159,7 @@ class FileStore(Store):
                 else:
                     break
             sleep(self.background_jobs_frequency_in_seconds)
+
+    def close(self):
+        if os.path.exists(self.file_path):
+            os.remove(self.file_path)

@@ -20,6 +20,7 @@ class TestKeyValueStore:
 
     def test_should_read_and_write_in_key_value_store(self):
         kv_store = KeyValueStore(file_path=self.file_path)
+        kv_store.start()
 
         kv_store.write("key_1", {'1': 2, '3': 55, '4': {'1': 2, '3': 55}})
         kv_store.write("key_2", {'1': 1000 * 'amuthan', '3': 55})
@@ -37,6 +38,7 @@ class TestKeyValueStore:
 
     def test_should_delete_in_key_value_store(self):
         kv_store = KeyValueStore(file_path=self.file_path)
+        kv_store.start()
 
         kv_store.write("key_1", {'1': 2, '3': 55, '4': {'1': 2, '3': 55}})
         kv_store.write("key_2", {'1': 1000 * 'amuthan', '3': 55})
@@ -51,6 +53,7 @@ class TestKeyValueStore:
 
     def test_should_load_existing_file(self):
         kv_store = KeyValueStore(file_path='tests/unit/test_data_fixture.bin')
+        kv_store.start()
 
         assert kv_store.get_all() == {
             "key_1": {'1': 2, '3': 55, '4': {'1': 2, '3': 55}},
@@ -59,6 +62,7 @@ class TestKeyValueStore:
 
     def test_should_raise_exception_if_key_accessed_after_time_to_live_expired(self):
         kv_store = KeyValueStore(file_path=self.file_path)
+        kv_store.start()
 
         kv_store.write("key_1", {'1': 2, '3': 55, '4': {'1': 2, '3': 55}})
         kv_store.write("key_2", {'1': 1000 * 'amuthan', '3': 55}, time_to_live_in_seconds=3)
@@ -77,6 +81,7 @@ class TestKeyValueStore:
     def test_should_delete_key_accessed_after_time_to_live_expired(self):
         kv_store = KeyValueStore(file_path=self.file_path,
                                  background_jobs_frequency_in_seconds=2)
+        kv_store.start()
 
         kv_store.write("key_1", {'1': 2, '3': 55, '4': {'1': 2, '3': 55}})
         kv_store.write("key_2", {'1': 1000 * 'amuthan', '3': 55},
