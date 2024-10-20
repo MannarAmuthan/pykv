@@ -5,7 +5,7 @@ import threading
 from mmap import mmap
 from typing import Tuple, Any, Optional
 
-TYPE_FLAG = int  # 1 byte , 0 - Not Available , 1 - Available Primary, 2 - Available Sub slot
+TYPE_FLAG = int  # 1 byte , 0 - deleted/Empty/available to store , 1 - Primary, 2 - Sub slot
 SLOTS_COUNT = int  # 1 byte , length of slots for this record, applicable only for primary slot
 TIME_TO_LIVE = int  # 4 byte, UNIX Epoch timestamp
 KEY_LEN = int  # 1 byte , length of key byte string
