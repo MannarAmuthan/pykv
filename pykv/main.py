@@ -31,7 +31,7 @@ class KeyValueStore:
 
     def __init__(self,
                  file_path: Optional[str] = "default_kv.bin",
-                 background_jobs_frequency_in_seconds=60,
+                 background_jobs_frequency_in_seconds=10,
                  mem_store_mode=False):
 
         self.__file_path__ = file_path

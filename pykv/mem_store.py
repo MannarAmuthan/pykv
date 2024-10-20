@@ -53,4 +53,7 @@ class MemStore(Store):
                     self.heap.pop()
                 else:
                     break
-            sleep(self.background_jobs_frequency_in_seconds)
+            for _ in range(0, self.background_jobs_frequency_in_seconds):
+                if self.stop_event.is_set():
+                    break
+                sleep(1)
